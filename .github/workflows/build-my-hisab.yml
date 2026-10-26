@@ -1,0 +1,25 @@
+name: Build My Hisab APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check ZIP exists
+        run: test -s my_hisab_complete_source_with_logo.zip
+
+      - name: Extract project
+        run: |
+          unzip -q my_hisab_complete_source_with_logo.zip -d /tmp/myhisab
+          find /tmp/myhisab -name pubspec.yaml
+          echo "Project ZIP extracted"
+
+      - name: Show project files
+        run: find /tmp/myhisab -maxdepth 4 -type f | head -100
