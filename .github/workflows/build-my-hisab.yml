@@ -1,25 +1,88 @@
+
 name: Build My Hisab APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check ZIP exists
+      - name: Verify source ZIP
         run: test -s my_hisab_complete_source_with_logo.zip
 
-      - name: Extract project
+      - name: Extract Flutter project
+        shell: bash
         run: |
+          mkdir -p /tmp/myhisab
           unzip -q my_hisab_complete_source_with_logo.zip -d /tmp/myhisab
-          find /tmp/myhisab -name pubspec.yaml
-          echo "Project ZIP extracted"
 
-      - name: Show project files
-        run: find /tmp/myhisab -maxdepth 4 -type f | head -100
+          PROJECT_FILE="$(find /tmp/myhisab -name pubspec.yaml -type f -print -quit)"
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERROR: ZIP ke andar pubspec.yaml nahi mila."
+            find /tmp/myhisab -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$PROJECT_FILE")"
+          echo "Flutter project found at: $PROJECT_DIR"
+          cp -a "$PROJECT_DIR"/. "$GITHUB_WORKSPACE"/
+
+          test -s pubspec.yaml
+          test -s lib/main.dart
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        run: flutter create --platforms=android --project-name my_hisab .
+
+      - name: Patch Android permissions
+        shell: bash
+        run: |
+          if [ -f tool/patch_android_manifest.py ]; then
+            python3 tool/patch_android_manifest.py
+          else
+            echo "No manifest patch script found; continuing."
+          fi
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Verify APK exists
+        run: |
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          ls -lh build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-hisab-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+          
